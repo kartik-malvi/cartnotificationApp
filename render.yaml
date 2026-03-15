@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: shopline-cart-notifier
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run render-start
+    autoDeploy: true
+    envVars:
+      - key: APP_URL
+        sync: false
+      - key: SHOPLINE_CLIENT_ID
+        sync: false
+      - key: SHOPLINE_CLIENT_SECRET
+        sync: false
+      - key: SHOPLINE_SCOPES
+        value: read_products,write_script_tags
+      - key: SESSION_SECRET
+        sync: false
+      - key: ALLOW_UNSIGNED_CART_EVENTS
+        value: "true"

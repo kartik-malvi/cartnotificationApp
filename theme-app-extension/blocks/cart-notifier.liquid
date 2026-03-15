@@ -1,0 +1,36 @@
+{% comment %}
+  Minimal theme app block. Render this block in the product template or enable it as an app embed.
+  It listens for product form submissions and posts cart events to the embedded app backend.
+{% endcomment %}
+
+<script src="{{ 'cart-notifier.js' | asset_url }}" defer></script>
+
+<script>
+  window.ShoplineCartNotifier = {
+    endpoint: "{{ block.settings.endpoint | escape }}",
+    shop: "{{ shop.permanent_domain | escape }}",
+    signatureSecretHint: "sign-on-server",
+    enabled: {{ block.settings.enabled | json }}
+  };
+</script>
+
+{% schema %}
+{
+  "name": "Cart notifier",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "endpoint",
+      "label": "App endpoint",
+      "default": "https://your-app.example/api/cart-events"
+    },
+    {
+      "type": "checkbox",
+      "id": "enabled",
+      "label": "Enable cart notifier",
+      "default": true
+    }
+  ]
+}
+{% endschema %}
