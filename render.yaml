@@ -9,7 +9,9 @@ services:
     envVars:
       - key: APP_URL
         sync: false
-      - key: SHOPLINE_CLIENT_ID
+      - key: PRIVATE_APP_MODE
+        value: "true"
+      - key: DEFAULT_SHOP_DOMAIN
         sync: false
       - key: SHOPLINE_CLIENT_SECRET
         sync: false

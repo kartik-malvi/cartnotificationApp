@@ -1,24 +1,12 @@
 import "dotenv/config";
-import crypto from "node:crypto";
 import express from "express";
 import helmet from "helmet";
 import morgan from "morgan";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  buildInstallUrl,
-  isValidProxySignature,
-  signShoplinePostBody,
-  verifyInstallSignature
-} from "../lib/shopline.js";
-import {
-  getStore,
-  listEventsForStore,
-  markAllRead,
-  saveInstall,
-  saveEvent
-} from "../lib/store.js";
+import { isValidProxySignature } from "../lib/shopline.js";
+import { getStore, listEventsForStore, markAllRead, saveInstall, saveEvent } from "../lib/store.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,6 +15,8 @@ const app = express();
 const port = Number(process.env.PORT || 3000);
 const host = process.env.HOST || "127.0.0.1";
 const appUrl = process.env.APP_URL || `http://localhost:${port}`;
+const privateAppMode = process.env.PRIVATE_APP_MODE !== "false";
+const defaultShop = normalizeShop(process.env.DEFAULT_SHOP_DOMAIN);
 
 app.set("trust proxy", true);
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -35,55 +25,51 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/static", express.static(path.join(__dirname, "..", "public")));
 
-app.get("/", (_req, res) => {
-  res.type("html").send(renderLandingPage());
-});
-
-app.get("/auth/install", (req, res) => {
-  const handle = normalizeHandle(req.query.handle) || handleFromShop(req.query.shop);
-  if (!handle) {
-    res.status(400).json({ error: "Missing or invalid `handle` or `shop` query parameter." });
+app.get("/", async (req, res) => {
+  if (privateAppMode && defaultShop && req.query.shop !== defaultShop) {
+    res.redirect(`/app?shop=${encodeURIComponent(defaultShop)}`);
     return;
   }
 
-  const installUrl = buildInstallUrl(handle, appUrl);
-  res.redirect(installUrl);
+  res.type("html").send(renderLandingPage({ defaultShop, privateAppMode }));
+});
+
+app.get("/auth/install", async (req, res) => {
+  const shop = normalizeShop(req.query.shop) || defaultShop;
+  if (!shop) {
+    res.status(400).json({ error: "Missing or invalid `shop` query parameter." });
+    return;
+  }
+
+  if (privateAppMode) {
+    await ensurePrivateInstall(shop);
+    res.redirect(`/app?shop=${encodeURIComponent(shop)}`);
+    return;
+  }
+
+  res.status(400).json({ error: "OAuth install flow is disabled in private app mode." });
 });
 
 app.get("/auth/callback", async (req, res) => {
-  const params = Object.fromEntries(
-    Object.entries(req.query).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value])
-  );
-
-  if (!verifyInstallSignature(params)) {
-    res.status(401).send("Invalid SHOPLINE install signature.");
+  const shop = normalizeShop(req.query.shop) || defaultShop;
+  if (!shop) {
+    res.status(400).send("Missing `shop`.");
     return;
   }
 
-  const handle = normalizeHandle(params.handle) || handleFromShop(params.shop);
-  if (!handle) {
-    res.status(400).send("Invalid store handle.");
-    return;
-  }
-
-  const accessToken = params.access_token || (await exchangeCodeForToken(params.code, handle));
-  const shop = `${handle}.myshopline.com`;
-
-  await saveInstall({
-    handle,
-    shop,
-    accessToken,
-    installedAt: new Date().toISOString()
-  });
-
+  await ensurePrivateInstall(shop);
   res.redirect(`/app?shop=${encodeURIComponent(shop)}`);
 });
 
 app.get("/app", async (req, res) => {
-  const shop = normalizeShop(req.query.shop);
+  const shop = normalizeShop(req.query.shop) || defaultShop;
   if (!shop) {
     res.status(400).send("Missing `shop`.");
     return;
+  }
+
+  if (privateAppMode) {
+    await ensurePrivateInstall(shop);
   }
 
   const store = await getStore(shop);
@@ -168,52 +154,30 @@ function normalizeShop(value) {
   return trimmed;
 }
 
-function normalizeHandle(value) {
-  if (typeof value !== "string") {
-    return "";
+async function ensurePrivateInstall(shop) {
+  const existing = await getStore(shop);
+  if (existing) {
+    return existing;
   }
 
-  return value.trim().toLowerCase().replace(/\.myshopline\.com$/, "");
+  const install = {
+    accessToken: process.env.SHOPLINE_CLIENT_SECRET || "",
+    installedAt: new Date().toISOString(),
+    mode: "private",
+    shop
+  };
+
+  await saveInstall(install);
+  return install;
 }
 
-function handleFromShop(value) {
-  return normalizeHandle(value);
-}
+function renderLandingPage({ defaultShop, privateAppMode }) {
+  const title = privateAppMode ? "Open app dashboard" : "Install app";
+  const helper = privateAppMode
+    ? "This SHOPLINE private app opens directly inside admin for your store."
+    : "Install this app on a SHOPLINE store to track add-to-cart events and view them inside an admin dashboard.";
+  const action = privateAppMode ? "/app" : "/auth/install";
 
-async function exchangeCodeForToken(code, handle) {
-  if (typeof code !== "string" || !code) {
-    return "";
-  }
-
-  const appKey = process.env.SHOPLINE_CLIENT_ID || "";
-  const timestamp = String(Date.now());
-  const payload = JSON.stringify({
-    appKey,
-    code,
-    handle
-  });
-  const sign = signShoplinePostBody(payload, timestamp);
-
-  const response = await fetch("https://developer.shopline.com/api/v1/oauth/access_token", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      timestamp,
-      sign
-    },
-    body: payload
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`SHOPLINE token exchange failed: ${response.status} ${text}`);
-  }
-
-  const data = await response.json();
-  return data.accessToken || data.access_token || "";
-}
-
-function renderLandingPage() {
   return `<!doctype html>
   <html lang="en">
     <head>
@@ -226,11 +190,11 @@ function renderLandingPage() {
       <main class="panel narrow">
         <p class="eyebrow">SHOPLINE App</p>
         <h1>Cart notifier</h1>
-        <p class="muted">Install this app on a SHOPLINE store to track add-to-cart events and view them inside an admin dashboard.</p>
-        <form action="/auth/install" method="get" class="install-form">
+        <p class="muted">${escapeHtml(helper)}</p>
+        <form action="${action}" method="get" class="install-form">
           <label for="shop">Store domain</label>
-          <input id="shop" name="shop" placeholder="example.myshopline.com" required />
-          <button type="submit">Install app</button>
+          <input id="shop" name="shop" placeholder="example.myshopline.com" value="${escapeHtml(defaultShop || "")}" required />
+          <button type="submit">${escapeHtml(title)}</button>
         </form>
       </main>
     </body>
