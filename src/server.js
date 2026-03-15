@@ -21,6 +21,18 @@ const defaultShop = normalizeShop(process.env.DEFAULT_SHOP_DOMAIN);
 app.set("trust proxy", true);
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(morgan("dev"));
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    res.sendStatus(204);
+    return;
+  }
+
+  next();
+});
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/static", express.static(path.join(__dirname, "..", "public")));
