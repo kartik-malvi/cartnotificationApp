@@ -5,7 +5,7 @@ Embedded SHOPLINE app scaffold that records add-to-cart events and shows them in
 ## What it does
 
 - Starts a local Node/Express app.
-- Provides a basic SHOPLINE install flow at `/auth/install`.
+- Provides a SHOPLINE install flow at `/auth/install` using store handle or full shop domain.
 - Stores install data and cart events in `data/db.json`.
 - Exposes `/api/cart-events` for storefront add-to-cart tracking.
 - Renders an admin-style dashboard at `/app?shop=your-store.myshopline.com`.
@@ -15,7 +15,7 @@ Embedded SHOPLINE app scaffold that records add-to-cart events and shows them in
 
 - The official SHOPLINE docs expose embedded apps, webhooks, and theme integrations, but I did not find a public API for pushing notifications into SHOPLINE's native admin notification bell.
 - This app therefore shows notifications inside its own app dashboard, not the global SHOPLINE admin notification center.
-- OAuth callback token exchange is left as a scaffold. The callback currently stores `access_token` if SHOPLINE sends it directly.
+- OAuth callback exchanges the authorization code for an access token using SHOPLINE's token endpoint.
 - The storefront script currently sends an empty signature. You must either:
   - add SHOPLINE app proxy signing if you route requests through a signed proxy, or
   - use `ALLOW_UNSIGNED_CART_EVENTS=true` only for development, then harden it before production.
@@ -64,6 +64,8 @@ npm run dev
    - `SESSION_SECRET=...`
    - `ALLOW_UNSIGNED_CART_EVENTS=true` for testing only
 5. After Render deploys, use that HTTPS URL in your SHOPLINE app settings.
+   - `App URL`: `https://your-service-name.onrender.com/auth/install`
+   - `Callback URL`: `https://your-service-name.onrender.com/auth/callback`
 
 Render sets `PORT` automatically. The included Render start command binds the app to `0.0.0.0`.
 

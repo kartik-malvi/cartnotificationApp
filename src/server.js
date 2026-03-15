@@ -6,7 +6,12 @@ import morgan from "morgan";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildInstallUrl, isValidProxySignature, verifyInstallSignature } from "../lib/shopline.js";
+import {
+  buildInstallUrl,
+  isValidProxySignature,
+  signShoplinePostBody,
+  verifyInstallSignature
+} from "../lib/shopline.js";
 import {
   getStore,
   listEventsForStore,
@@ -35,13 +40,13 @@ app.get("/", (_req, res) => {
 });
 
 app.get("/auth/install", (req, res) => {
-  const shop = normalizeShop(req.query.shop);
-  if (!shop) {
-    res.status(400).json({ error: "Missing or invalid `shop` query parameter." });
+  const handle = normalizeHandle(req.query.handle) || handleFromShop(req.query.shop);
+  if (!handle) {
+    res.status(400).json({ error: "Missing or invalid `handle` or `shop` query parameter." });
     return;
   }
 
-  const installUrl = buildInstallUrl(shop, appUrl);
+  const installUrl = buildInstallUrl(handle, appUrl);
   res.redirect(installUrl);
 });
 
@@ -55,15 +60,19 @@ app.get("/auth/callback", async (req, res) => {
     return;
   }
 
-  const shop = normalizeShop(params.shop);
-  if (!shop) {
-    res.status(400).send("Invalid shop.");
+  const handle = normalizeHandle(params.handle) || handleFromShop(params.shop);
+  if (!handle) {
+    res.status(400).send("Invalid store handle.");
     return;
   }
 
+  const accessToken = params.access_token || (await exchangeCodeForToken(params.code, handle));
+  const shop = `${handle}.myshopline.com`;
+
   await saveInstall({
+    handle,
     shop,
-    accessToken: params.access_token || "",
+    accessToken,
     installedAt: new Date().toISOString()
   });
 
@@ -157,6 +166,51 @@ function normalizeShop(value) {
   }
 
   return trimmed;
+}
+
+function normalizeHandle(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim().toLowerCase().replace(/\.myshopline\.com$/, "");
+}
+
+function handleFromShop(value) {
+  return normalizeHandle(value);
+}
+
+async function exchangeCodeForToken(code, handle) {
+  if (typeof code !== "string" || !code) {
+    return "";
+  }
+
+  const appKey = process.env.SHOPLINE_CLIENT_ID || "";
+  const timestamp = String(Date.now());
+  const payload = JSON.stringify({
+    appKey,
+    code,
+    handle
+  });
+  const sign = signShoplinePostBody(payload, timestamp);
+
+  const response = await fetch("https://developer.shopline.com/api/v1/oauth/access_token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      timestamp,
+      sign
+    },
+    body: payload
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`SHOPLINE token exchange failed: ${response.status} ${text}`);
+  }
+
+  const data = await response.json();
+  return data.accessToken || data.access_token || "";
 }
 
 function renderLandingPage() {
