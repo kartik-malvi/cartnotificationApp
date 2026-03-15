@@ -111,38 +111,26 @@ app.post("/app/notifications/read", async (req, res) => {
 });
 
 app.post("/api/cart-events", async (req, res) => {
-  const body = req.body || {};
-  const shop = normalizeShop(body.shop);
-  if (!shop) {
-    res.status(400).json({ error: "Missing `shop`." });
-    return;
-  }
-
-  if (!isValidProxySignature(body)) {
-    res.status(401).json({ error: "Invalid signature." });
-    return;
-  }
-
-  const event = await saveEvent({
-    customer: {
-      email: body.customerEmail || "",
-      id: body.customerId || "",
-      name: body.customerName || ""
-    },
-    product: {
-      id: body.productId || "",
-      image: body.productImage || "",
-      title: body.productTitle || "Unknown product",
-      variantId: body.variantId || ""
-    },
-    quantity: Number(body.quantity || 1),
-    read: false,
-    shop,
-    storefrontUrl: body.pageUrl || "",
-    occurredAt: new Date().toISOString()
-  });
+  const event = await createCartEvent(req.body || {});
 
   res.status(201).json({ ok: true, eventId: event.id });
+});
+
+app.get("/api/cart-events.gif", async (req, res) => {
+  try {
+    await createCartEvent(req.query || {});
+  } catch (_error) {
+    // Tracking requests should not affect the storefront response path.
+  }
+
+  res.setHeader("Content-Type", "image/gif");
+  res.setHeader("Cache-Control", "no-store");
+  res.end(
+    Buffer.from(
+      "R0lGODlhAQABAPAAAAAAAAAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==",
+      "base64"
+    )
+  );
 });
 
 app.get("/health", (_req, res) => {
@@ -181,6 +169,36 @@ async function ensurePrivateInstall(shop) {
 
   await saveInstall(install);
   return install;
+}
+
+async function createCartEvent(payload) {
+  const shop = normalizeShop(payload.shop);
+  if (!shop) {
+    throw new Error("Missing `shop`.");
+  }
+
+  if (!isValidProxySignature(payload)) {
+    throw new Error("Invalid signature.");
+  }
+
+  return saveEvent({
+    customer: {
+      email: payload.customerEmail || "",
+      id: payload.customerId || "",
+      name: payload.customerName || ""
+    },
+    product: {
+      id: payload.productId || "",
+      image: payload.productImage || "",
+      title: payload.productTitle || "Unknown product",
+      variantId: payload.variantId || ""
+    },
+    quantity: Number(payload.quantity || 1),
+    read: false,
+    shop,
+    storefrontUrl: payload.pageUrl || "",
+    occurredAt: new Date().toISOString()
+  });
 }
 
 function renderLandingPage({ defaultShop, privateAppMode }) {

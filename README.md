@@ -74,3 +74,46 @@ Render sets `PORT` automatically. The included Render start command binds the ap
 1. Add the storefront tracking script or theme block to your test theme.
 2. Decide how you want storefront events authenticated.
 3. Convert the HTML dashboard to the exact embedded app stack you prefer, such as React or Next.js.
+
+## Storefront test snippet
+
+If your theme blocks `fetch` cart tracking, use a pixel request instead:
+
+```html
+<script>
+(function () {
+  var endpoint = "https://cartnotificationapp.onrender.com/api/cart-events.gif";
+  var shop = "testlive.myshopline.com";
+
+  function sendCartEvent(data) {
+    var params = new URLSearchParams({
+      shop: shop,
+      productId: data.productId || "",
+      variantId: data.variantId || "",
+      quantity: data.quantity || "1",
+      productTitle: data.productTitle || document.title,
+      productImage: data.productImage || "",
+      pageUrl: window.location.href
+    });
+
+    new Image().src = endpoint + "?" + params.toString();
+  }
+
+  document.addEventListener("submit", function (event) {
+    var form = event.target;
+    if (!(form instanceof HTMLFormElement)) return;
+
+    var action = (form.getAttribute("action") || "").toLowerCase();
+    if (!action.includes("/cart")) return;
+
+    var idField = form.querySelector('[name="id"], [name="variant_id"], [name="variantId"]');
+    var qtyField = form.querySelector('[name="quantity"], [name="qty"]');
+
+    sendCartEvent({
+      variantId: idField ? idField.value : "",
+      quantity: qtyField ? qtyField.value : "1"
+    });
+  });
+})();
+</script>
+```
