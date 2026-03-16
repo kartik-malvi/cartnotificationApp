@@ -126,6 +126,8 @@ app.get("/app", async (req, res) => {
 
   if (privateAppMode) {
     await ensurePrivateInstall(shop);
+  } else {
+    await ensureInstalledRecord(shop);
   }
 
   const store = await getStore(shop);
@@ -148,6 +150,12 @@ app.get("/api/events", async (req, res) => {
   if (!shop) {
     res.status(400).json({ error: "Missing `shop`." });
     return;
+  }
+
+  if (privateAppMode) {
+    await ensurePrivateInstall(shop);
+  } else {
+    await ensureInstalledRecord(shop);
   }
 
   const store = await getStore(shop);
@@ -266,6 +274,24 @@ async function ensurePrivateInstall(shop) {
     accessToken: process.env.SHOPLINE_CLIENT_SECRET || "",
     installedAt: new Date().toISOString(),
     mode: "private",
+    shop
+  };
+
+  await saveInstall(install);
+  return install;
+}
+
+async function ensureInstalledRecord(shop) {
+  const existing = await getStore(shop);
+  if (existing) {
+    return existing;
+  }
+
+  const install = {
+    accessToken: "",
+    handle: handleFromShop(shop),
+    installedAt: new Date().toISOString(),
+    mode: "inferred",
     shop
   };
 
