@@ -35,7 +35,8 @@ app.set("trust proxy", true);
 app.use(
   helmet({
     contentSecurityPolicy: false,
-    crossOriginResourcePolicy: { policy: "cross-origin" }
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    frameguard: false
   })
 );
 app.use(morgan("dev"));
