@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { isValidProxySignature } from "../lib/shopline.js";
 import {
   deleteEvent,
+  deleteAllEvents,
   getStore,
   listEventsForStore,
   markAllRead,
@@ -151,6 +152,17 @@ app.post("/app/events/delete", async (req, res) => {
   }
 
   await deleteEvent(shop, eventId);
+  res.redirect(`/app?shop=${encodeURIComponent(shop)}`);
+});
+
+app.post("/app/events/delete-all", async (req, res) => {
+  const shop = normalizeShop(req.body.shop) || defaultShop;
+  if (!shop) {
+    res.status(400).json({ error: "Missing `shop`." });
+    return;
+  }
+
+  await deleteAllEvents(shop);
   res.redirect(`/app?shop=${encodeURIComponent(shop)}`);
 });
 
@@ -306,10 +318,16 @@ function renderDashboardPage({ appUrl, events, installed, shop, unreadCount }) {
           <p>App URL: <code>${escapeHtml(appUrl)}</code></p>
           <p>Theme block file: <code>theme-app-extension/blocks/cart-notifier.liquid</code></p>
         </section>
-        <form action="/app/notifications/read" method="post" class="toolbar">
-          <input type="hidden" name="shop" value="${escapeHtml(shop)}" />
-          <button type="submit">Mark all read</button>
-        </form>
+        <div class="toolbar">
+          <form action="/app/notifications/read" method="post">
+            <input type="hidden" name="shop" value="${escapeHtml(shop)}" />
+            <button type="submit">Mark all read</button>
+          </form>
+          <form action="/app/events/delete-all" method="post">
+            <input type="hidden" name="shop" value="${escapeHtml(shop)}" />
+            <button type="submit" class="ghost-button">Delete all history</button>
+          </form>
+        </div>
         <p class="muted history-note">This dashboard keeps cart history until you delete individual records.</p>
         <section class="grid" id="events-grid">${eventCards}</section>
       </main>
