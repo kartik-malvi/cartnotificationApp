@@ -19,7 +19,12 @@ const privateAppMode = process.env.PRIVATE_APP_MODE !== "false";
 const defaultShop = normalizeShop(process.env.DEFAULT_SHOP_DOMAIN);
 
 app.set("trust proxy", true);
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+  })
+);
 app.use(morgan("dev"));
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
