@@ -10,8 +10,10 @@ services:
       - key: APP_URL
         sync: false
       - key: PRIVATE_APP_MODE
-        value: "true"
+        value: "false"
       - key: DEFAULT_SHOP_DOMAIN
+        sync: false
+      - key: SHOPLINE_CLIENT_ID
         sync: false
       - key: SHOPLINE_CLIENT_SECRET
         sync: false

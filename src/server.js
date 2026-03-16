@@ -5,7 +5,12 @@ import morgan from "morgan";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { isValidProxySignature } from "../lib/shopline.js";
+import {
+  buildInstallUrl,
+  isValidProxySignature,
+  signShoplinePostBody,
+  verifyInstallSignature
+} from "../lib/shopline.js";
 import {
   deleteEvent,
   deleteAllEvents,
@@ -60,11 +65,34 @@ app.get("/", async (req, res) => {
 });
 
 app.get("/auth/install", async (req, res) => {
-  const shop = normalizeShop(req.query.shop) || defaultShop;
-  if (!shop) {
+  const handle = normalizeHandle(req.query.handle) || handleFromShop(req.query.shop) || handleFromShop(defaultShop);
+  if (!handle) {
     res.status(400).json({ error: "Missing or invalid `shop` query parameter." });
     return;
   }
+
+  if (privateAppMode) {
+    const shop = `${handle}.myshopline.com`;
+    await ensurePrivateInstall(shop);
+    res.redirect(`/app?shop=${encodeURIComponent(shop)}`);
+    return;
+  }
+
+  res.redirect(buildInstallUrl(handle, appUrl));
+});
+
+app.get("/auth/callback", async (req, res) => {
+  const params = Object.fromEntries(
+    Object.entries(req.query).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value])
+  );
+
+  const handle = normalizeHandle(params.handle) || handleFromShop(params.shop);
+  if (!handle) {
+    res.status(400).send("Missing `shop`.");
+    return;
+  }
+
+  const shop = `${handle}.myshopline.com`;
 
   if (privateAppMode) {
     await ensurePrivateInstall(shop);
@@ -72,17 +100,19 @@ app.get("/auth/install", async (req, res) => {
     return;
   }
 
-  res.status(400).json({ error: "OAuth install flow is disabled in private app mode." });
-});
-
-app.get("/auth/callback", async (req, res) => {
-  const shop = normalizeShop(req.query.shop) || defaultShop;
-  if (!shop) {
-    res.status(400).send("Missing `shop`.");
+  if (!verifyInstallSignature(params)) {
+    res.status(401).send("Invalid SHOPLINE install signature.");
     return;
   }
 
-  await ensurePrivateInstall(shop);
+  const accessToken = params.access_token || (await exchangeCodeForToken(params.code, handle));
+  await saveInstall({
+    handle,
+    shop,
+    accessToken,
+    installedAt: new Date().toISOString(),
+    mode: "oauth"
+  });
   res.redirect(`/app?shop=${encodeURIComponent(shop)}`);
 });
 
@@ -213,6 +243,18 @@ function normalizeShop(value) {
   return trimmed;
 }
 
+function normalizeHandle(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim().toLowerCase().replace(/\.myshopline\.com$/, "");
+}
+
+function handleFromShop(value) {
+  return normalizeHandle(value);
+}
+
 async function ensurePrivateInstall(shop) {
   const existing = await getStore(shop);
   if (existing) {
@@ -228,6 +270,39 @@ async function ensurePrivateInstall(shop) {
 
   await saveInstall(install);
   return install;
+}
+
+async function exchangeCodeForToken(code, handle) {
+  if (typeof code !== "string" || !code) {
+    return "";
+  }
+
+  const appKey = process.env.SHOPLINE_CLIENT_ID || "";
+  const timestamp = String(Date.now());
+  const payload = JSON.stringify({
+    appKey,
+    code,
+    handle
+  });
+  const sign = signShoplinePostBody(payload, timestamp);
+
+  const response = await fetch("https://developer.shopline.com/api/v1/oauth/access_token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      sign,
+      timestamp
+    },
+    body: payload
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`SHOPLINE token exchange failed: ${response.status} ${text}`);
+  }
+
+  const data = await response.json();
+  return data.accessToken || data.access_token || "";
 }
 
 async function createCartEvent(payload) {
