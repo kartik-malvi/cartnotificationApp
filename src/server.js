@@ -163,8 +163,11 @@ app.post("/api/cart-events", async (req, res) => {
 app.get("/api/cart-events.gif", async (req, res) => {
   try {
     await createCartEvent(req.query || {});
-  } catch (_error) {
-    // Tracking requests should not affect the storefront response path.
+  } catch (error) {
+    console.error("cart-events.gif failed", {
+      message: error instanceof Error ? error.message : String(error),
+      query: req.query || {}
+    });
   }
 
   res.setHeader("Content-Type", "image/gif");
