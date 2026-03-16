@@ -104,6 +104,25 @@ app.get("/app", async (req, res) => {
   );
 });
 
+app.get("/api/events", async (req, res) => {
+  const shop = normalizeShop(req.query.shop) || defaultShop;
+  if (!shop) {
+    res.status(400).json({ error: "Missing `shop`." });
+    return;
+  }
+
+  const store = await getStore(shop);
+  const events = await listEventsForStore(shop);
+  const unreadCount = events.filter((event) => !event.read).length;
+
+  res.json({
+    events,
+    installed: Boolean(store),
+    shop,
+    unreadCount
+  });
+});
+
 app.post("/app/notifications/read", async (req, res) => {
   const shop = normalizeShop(req.body.shop);
   if (!shop) {
@@ -237,7 +256,119 @@ function renderLandingPage({ defaultShop, privateAppMode }) {
 }
 
 function renderDashboardPage({ appUrl, events, installed, shop, unreadCount }) {
-  const eventCards = events.length
+  const eventCards = renderEventCards(events);
+
+  return `<!doctype html>
+  <html lang="en">
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>Cart Notifications</title>
+      <link rel="stylesheet" href="/static/styles.css" />
+    </head>
+    <body class="shell">
+      <main class="panel wide">
+        <header class="page-header">
+          <div>
+            <p class="eyebrow">Embedded dashboard</p>
+            <h1>${escapeHtml(shop)}</h1>
+            <p class="muted" id="install-status">${installed ? "App install saved locally." : "App install not found yet."}</p>
+          </div>
+          <div class="stats">
+            <span class="stat-label">Unread</span>
+            <strong id="unread-count">${escapeHtml(String(unreadCount))}</strong>
+          </div>
+        </header>
+        <section class="callout">
+          <p>App URL: <code>${escapeHtml(appUrl)}</code></p>
+          <p>Theme block file: <code>theme-app-extension/blocks/cart-notifier.liquid</code></p>
+        </section>
+        <form action="/app/notifications/read" method="post" class="toolbar">
+          <input type="hidden" name="shop" value="${escapeHtml(shop)}" />
+          <button type="submit">Mark all read</button>
+        </form>
+        <section class="grid" id="events-grid">${eventCards}</section>
+      </main>
+      <script>
+        const shop = ${JSON.stringify(shop)};
+        const eventsGrid = document.getElementById("events-grid");
+        const unreadCount = document.getElementById("unread-count");
+        const installStatus = document.getElementById("install-status");
+        let lastSignature = ${JSON.stringify(buildEventsSignature(events, unreadCount, installed))};
+
+        async function refreshEvents() {
+          try {
+            const response = await fetch("/api/events?shop=" + encodeURIComponent(shop), {
+              headers: { Accept: "application/json" },
+              cache: "no-store"
+            });
+            if (!response.ok) return;
+
+            const data = await response.json();
+            const signature = JSON.stringify({
+              installed: data.installed,
+              unreadCount: data.unreadCount,
+              ids: data.events.map(function (event) {
+                return [event.id, event.read, event.occurredAt];
+              })
+            });
+
+            if (signature === lastSignature) return;
+            lastSignature = signature;
+
+            unreadCount.textContent = String(data.unreadCount);
+            installStatus.textContent = data.installed
+              ? "App install saved locally."
+              : "App install not found yet.";
+            eventsGrid.innerHTML = renderEventsHtml(data.events);
+          } catch (_error) {
+            // Ignore transient polling errors.
+          }
+        }
+
+        function renderEventsHtml(events) {
+          if (!events.length) {
+            return '<div class="empty-state"><h3>No cart notifications yet</h3><p>After the theme extension is enabled, new add-to-cart events will appear here.</p></div>';
+          }
+
+          return events.map(function (event) {
+            const when = new Date(event.occurredAt).toLocaleString("en-US", {
+              dateStyle: "medium",
+              timeStyle: "short"
+            });
+            const page = event.storefrontUrl
+              ? '<a href="' + escapeHtml(event.storefrontUrl) + '" target="_blank" rel="noreferrer">Open</a>'
+              : "-";
+
+            return '<article class="event-card ' + (event.read ? "read" : "unread") + '">' +
+              '<div class="event-header"><div><h3>' + escapeHtml(event.product.title) + '</h3><p>' + escapeHtml(when) + '</p></div><span class="badge">' + (event.read ? "Read" : "New") + '</span></div>' +
+              '<dl class="meta">' +
+              '<div><dt>Qty</dt><dd>' + escapeHtml(String(event.quantity)) + '</dd></div>' +
+              '<div><dt>Product ID</dt><dd>' + escapeHtml(event.product.id || "-") + '</dd></div>' +
+              '<div><dt>Variant ID</dt><dd>' + escapeHtml(event.product.variantId || "-") + '</dd></div>' +
+              '<div><dt>Customer</dt><dd>' + escapeHtml(event.customer.email || event.customer.name || "Guest") + '</dd></div>' +
+              '<div><dt>Page</dt><dd>' + page + '</dd></div>' +
+              '</dl></article>';
+          }).join("");
+        }
+
+        function escapeHtml(value) {
+          return String(value)
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+        }
+
+        setInterval(refreshEvents, 3000);
+      </script>
+    </body>
+  </html>`;
+}
+
+function renderEventCards(events) {
+  return events.length
     ? events
         .map((event) => {
           const when = new Date(event.occurredAt).toLocaleString("en-US", {
@@ -267,40 +398,14 @@ function renderDashboardPage({ appUrl, events, installed, shop, unreadCount }) {
         <h3>No cart notifications yet</h3>
         <p>After the theme extension is enabled, new add-to-cart events will appear here.</p>
       </div>`;
+}
 
-  return `<!doctype html>
-  <html lang="en">
-    <head>
-      <meta charset="utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <title>Cart Notifications</title>
-      <link rel="stylesheet" href="/static/styles.css" />
-    </head>
-    <body class="shell">
-      <main class="panel wide">
-        <header class="page-header">
-          <div>
-            <p class="eyebrow">Embedded dashboard</p>
-            <h1>${escapeHtml(shop)}</h1>
-            <p class="muted">${installed ? "App install saved locally." : "App install not found yet."}</p>
-          </div>
-          <div class="stats">
-            <span class="stat-label">Unread</span>
-            <strong>${escapeHtml(String(unreadCount))}</strong>
-          </div>
-        </header>
-        <section class="callout">
-          <p>App URL: <code>${escapeHtml(appUrl)}</code></p>
-          <p>Theme block file: <code>theme-app-extension/blocks/cart-notifier.liquid</code></p>
-        </section>
-        <form action="/app/notifications/read" method="post" class="toolbar">
-          <input type="hidden" name="shop" value="${escapeHtml(shop)}" />
-          <button type="submit">Mark all read</button>
-        </form>
-        <section class="grid">${eventCards}</section>
-      </main>
-    </body>
-  </html>`;
+function buildEventsSignature(events, unreadCount, installed) {
+  return JSON.stringify({
+    installed,
+    unreadCount,
+    ids: events.map((event) => [event.id, event.read, event.occurredAt])
+  });
 }
 
 function escapeHtml(value) {
