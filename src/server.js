@@ -390,7 +390,7 @@ function renderDashboardPage({ appUrl, events, installed, shop, unreadCount }) {
             .replaceAll("'", "&#39;");
         }
 
-        setInterval(refreshEvents, 3000);
+        setInterval(refreshEvents, 1000);
       </script>
     </body>
   </html>`;
