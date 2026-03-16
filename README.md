@@ -33,6 +33,7 @@ Embedded SHOPLINE app scaffold that records add-to-cart events and shows them in
 1. Copy `.env.example` to `.env`.
 2. Fill in:
    - `APP_URL`
+   - `DATABASE_URL` if you want persistent hosted storage
    - `SHOPLINE_CLIENT_ID`
    - `SHOPLINE_CLIENT_SECRET`
 3. Install packages:
@@ -60,6 +61,7 @@ npm run dev
    - `APP_URL=https://your-service-name.onrender.com`
    - `PRIVATE_APP_MODE=false`
    - `DEFAULT_SHOP_DOMAIN=testlive.myshopline.com`
+   - `DATABASE_URL=postgresql://...`
    - `SHOPLINE_CLIENT_ID=...`
    - `SHOPLINE_CLIENT_SECRET=...`
    - `SHOPLINE_SCOPES=read_products,write_script_tags`
@@ -70,6 +72,7 @@ npm run dev
    - `App callback URL`: `https://your-service-name.onrender.com/auth/callback`
 
 Render sets `PORT` automatically. The included Render start command binds the app to `0.0.0.0`.
+If `DATABASE_URL` is set, the app stores installs and cart history in Postgres. Otherwise it falls back to `data/db.json`.
 
 ## Recommended next steps
 
