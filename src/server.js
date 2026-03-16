@@ -6,7 +6,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { isValidProxySignature } from "../lib/shopline.js";
-import { getStore, listEventsForStore, markAllRead, saveInstall, saveEvent } from "../lib/store.js";
+import {
+  deleteEvent,
+  getStore,
+  listEventsForStore,
+  markAllRead,
+  saveInstall,
+  saveEvent
+} from "../lib/store.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -131,6 +138,19 @@ app.post("/app/notifications/read", async (req, res) => {
   }
 
   await markAllRead(shop);
+  res.redirect(`/app?shop=${encodeURIComponent(shop)}`);
+});
+
+app.post("/app/events/delete", async (req, res) => {
+  const shop = normalizeShop(req.body.shop) || defaultShop;
+  const eventId = typeof req.body.eventId === "string" ? req.body.eventId : "";
+
+  if (!shop || !eventId) {
+    res.status(400).json({ error: "Missing `shop` or `eventId`." });
+    return;
+  }
+
+  await deleteEvent(shop, eventId);
   res.redirect(`/app?shop=${encodeURIComponent(shop)}`);
 });
 
@@ -287,6 +307,7 @@ function renderDashboardPage({ appUrl, events, installed, shop, unreadCount }) {
           <input type="hidden" name="shop" value="${escapeHtml(shop)}" />
           <button type="submit">Mark all read</button>
         </form>
+        <p class="muted history-note">This dashboard keeps cart history until you delete individual records.</p>
         <section class="grid" id="events-grid">${eventCards}</section>
       </main>
       <script>
@@ -348,7 +369,12 @@ function renderDashboardPage({ appUrl, events, installed, shop, unreadCount }) {
               '<div><dt>Variant ID</dt><dd>' + escapeHtml(event.product.variantId || "-") + '</dd></div>' +
               '<div><dt>Customer</dt><dd>' + escapeHtml(event.customer.email || event.customer.name || "Guest") + '</dd></div>' +
               '<div><dt>Page</dt><dd>' + page + '</dd></div>' +
-              '</dl></article>';
+              '</dl>' +
+              '<form action="/app/events/delete" method="post" class="delete-form">' +
+              '<input type="hidden" name="shop" value="' + escapeHtml(shop) + '">' +
+              '<input type="hidden" name="eventId" value="' + escapeHtml(event.id) + '">' +
+              '<button type="submit" class="ghost-button">Delete record</button>' +
+              '</form></article>';
           }).join("");
         }
 
@@ -391,6 +417,11 @@ function renderEventCards(events) {
               <div><dt>Customer</dt><dd>${escapeHtml(event.customer.email || event.customer.name || "Guest")}</dd></div>
               <div><dt>Page</dt><dd>${event.storefrontUrl ? `<a href="${escapeHtml(event.storefrontUrl)}" target="_blank" rel="noreferrer">Open</a>` : "-"}</dd></div>
             </dl>
+            <form action="/app/events/delete" method="post" class="delete-form">
+              <input type="hidden" name="shop" value="${escapeHtml(event.shop)}" />
+              <input type="hidden" name="eventId" value="${escapeHtml(event.id)}" />
+              <button type="submit" class="ghost-button">Delete record</button>
+            </form>
           </article>`;
         })
         .join("")
